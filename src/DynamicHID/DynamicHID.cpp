@@ -1,5 +1,5 @@
 /*
-  Modified by Matthew Heironimus to support HID Report Descriptors to be in 
+  Modified by Matthew Heironimus to support HID Report Descriptors to be in
   standard RAM in addition to program memory (PROGMEM).
 
    Copyright (c) 2015, Arduino LLC
@@ -26,6 +26,10 @@
 #ifdef _VARIANT_ARDUINO_DUE_X_
 #define USB_SendControl USBD_SendControl
 #define USB_Send USBD_Send
+#elif defined(ARDUINO_ARCH_SAMD)
+#define USB_SendControl(flags, d, len) USBDevice.sendControl(d, len)
+#define USB_Send USBDevice.send
+#define TRANSFER_RELEASE	0x00
 #endif
 
 DynamicHID_& DynamicHID()
@@ -62,11 +66,11 @@ int DynamicHID_::getDescriptor(USBSetup& setup)
 			return -1;
 		total += res;
 	}
-	
+
 	// Reset the protocol on reenumeration. Normally the host should not assume the state of the protocol
 	// due to the USB specs, but Windows and Linux just assumes its in report mode.
 	protocol = DYNAMIC_HID_REPORT_PROTOCOL;
-	
+
 	return total;
 }
 
@@ -135,8 +139,13 @@ bool DynamicHID_::setup(USBSetup& setup)
 			return true;
 		}
 		if (request == DYNAMIC_HID_SET_IDLE) {
-			idle = setup.wValueL;
-			return true;
+			#ifdef ARDUINO_ARCH_SAMD
+				USBDevice.armSend(0, &idle, 1);
+				return true;
+			#else
+				idle = setup.wValueL;
+				return true;
+			#endif
 		}
 		if (request == DYNAMIC_HID_SET_REPORT)
 		{
@@ -157,7 +166,11 @@ DynamicHID_::DynamicHID_(void) : PluggableUSBModule(1, 1, epType),
                    rootNode(NULL), descriptorSize(0),
                    protocol(DYNAMIC_HID_REPORT_PROTOCOL), idle(1)
 {
-	epType[0] = EP_TYPE_INTERRUPT_IN;
+	#ifdef ARDUINO_ARCH_SAMD
+		epType[0] = USB_ENDPOINT_TYPE_INTERRUPT | USB_ENDPOINT_IN(0);
+	#else
+		epType[0] = EP_TYPE_INTERRUPT_IN;
+	#endif
 	PluggableUSB().plug(this);
 }
 
